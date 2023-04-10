@@ -144,7 +144,7 @@ class EmbeddingFromLanguageModel(nn.Module):
 
 
 class EflsEmbeddingPredictor:
-    def __init__(self, efsl_model: Efls, tokenzier, max_length: int = 64):
+    def __init__(self, efsl_model: Efls, tokenzier, max_length: int = 128):
         self.efls_model = efsl_model
         self.efls_model.eval()
         self.tokenizer = tokenzier

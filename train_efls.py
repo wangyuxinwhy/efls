@@ -7,7 +7,6 @@ from typing import Optional
 
 from rich.logging import RichHandler
 import typer
-from typer import Argument
 from accelerate import Accelerator
 from accelerate.utils import set_seed, ProjectConfiguration
 from torch.optim import Adam
@@ -20,7 +19,7 @@ from transformers import (
 )
 
 from efls.data import EflsCollator, TextDataset, read_jsonl
-from efls.model import EmbeddingFromLanguageModel
+from efls.model import EmbeddingFromLanguageModel, evaluate_spearman, EflsEmbeddingPredictor
 from efls.trainer import Trainer
 
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
@@ -36,14 +35,20 @@ logger = logging.getLogger('rich')
 def create_dataloader(
     encoder_tokenzier,
     decoder_tokenzier,
-    json_file: Path,
+    train_file: Path,
     batch_size: int = 32,
     max_length: int = 512,
     num_workers: int = 0,
     shuffle: bool = True,
 ):
-    records = read_jsonl(json_file)
-    train_dataset = TextDataset.from_text_pair_similarity_records(records)
+    if str(train_file).endswith('.jsonl') or str(train_file).endswith('.json'):
+        records = read_jsonl(train_file)
+        train_dataset = TextDataset.from_text_pair_similarity_records(records)
+    elif str(train_file).endswith('.txt'):
+        train_dataset = TextDataset.from_text_file(str(train_file))
+    else:
+        raise ValueError(f'Unsupported file type: {train_file}')
+
     collator = EflsCollator(encoder_tokenzier, decoder_tokenzier, max_length=max_length)
     dataloader = DataLoader(
         train_dataset,
@@ -68,12 +73,29 @@ def create_adamw_optimizer(model: EmbeddingFromLanguageModel, lr: float, project
     return optimizer
 
 
+class Evaluator:
+
+    def __init__(self, records_dict: dict[str, list[dict]], tokenizer):
+        self.records_dict = records_dict
+        self.tokenizer = tokenizer
+    
+    def __call__(self, trainer: Trainer):
+        model = trainer.model.efls.eval() # type: ignore
+        predictor = EflsEmbeddingPredictor(model, self.tokenizer) # type: ignore
+        scores = []
+        for name, records in self.records_dict.items():
+            spearman = evaluate_spearman(predictor, records)
+            scores.append(spearman)
+            logger.info(f'Evaluate {name} spearman: {spearman}')
+        logger.info(f'Average spearman: {sum(scores) / len(scores)}')
+
+
 def main(
-    encoder_name_or_path: str = Argument(..., help='Encoder name or path, eg: bert-base-uncased'),
-    decoder_name_or_path: str = Argument(..., help='Decoder name or path, eg: gpt2-large'),
-    train_json_file: Path = Argument(
+    encoder_name_or_path: str = typer.Argument(..., help='Encoder name or path, eg: bert-base-uncased'),
+    decoder_name_or_path: str = typer.Argument(..., help='Decoder name or path, eg: gpt2-large'),
+    train_file: Path = typer.Argument(
         ...,
-        help='jsonl format file, must contain "sentence1", "sentence2" fields',
+        help='jsonl or text format file, jsonl file must contain "sentence1", "sentence2" fields',
     ),
     embedding_size: int = 300,
     num_efls_tokens: int = 10,
@@ -108,11 +130,11 @@ def main(
     decoder_tokenzier = AutoTokenizer.from_pretrained(decoder_name_or_path)
     if decoder_tokenzier.pad_token is None:
         decoder_tokenzier.pad_token = decoder_tokenzier.eos_token
-    logger.info(f'Creat dataloader from {train_json_file}')
+    logger.info(f'Creat dataloader from {train_file}')
     train_dataloader = create_dataloader(
         encoder_tokenzier,
         decoder_tokenzier,
-        train_json_file,
+        train_file,
         batch_size=batch_size,
         max_length=max_length,
     )
@@ -136,6 +158,11 @@ def main(
     )
     model, optimizer, lr_scheduler = accelerator.prepare(model, optimizer, lr_scheduler)
 
+    evaluate_records_dict = {
+        'train': read_jsonl('datasets/processed/stsb.train.jsonl'),
+        'dev': read_jsonl('datasets/processed/stsb.dev.jsonl'),
+        'test': read_jsonl('datasets/processed/stsb.test.jsonl'),
+    }
     trainer = Trainer(
         model=model,
         optimizer=optimizer,
@@ -147,6 +174,7 @@ def main(
         lr_scheduler=lr_scheduler,
         log_interval=10,
         save_on_epoch_end=False,
+        epoch_end_callbacks=[Evaluator(evaluate_records_dict, encoder_tokenzier)]
     )
     logger.info('all set, start training')
     trainer.train()
