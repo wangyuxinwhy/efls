@@ -6,7 +6,6 @@ os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 from pathlib import Path
 from typing import Optional
 
-import torch
 import typer
 from accelerate import Accelerator
 from accelerate.utils import set_seed, ProjectConfiguration
@@ -40,9 +39,8 @@ def create_dataloader(
 def create_adamw_optimizer(model: EmbeddingFromLanguageModel, lr: float, project_lr=1e-3, weight_decay: float = 0.01):
     parameters = list(model.named_parameters())
     # todo: add no decay param group
-    no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
-        {'params': [p for n, p in parameters if not 'project' in n]},
+        {'params': [p for n, p in parameters if 'project' not in n]},
         {'params': [p for n, p in parameters if 'project' in n], 'lr': project_lr},
     ]
     optimizer = AdamW(optimizer_grouped_parameters, lr=lr)
@@ -105,6 +103,7 @@ def main(
         core_metric_name='-loss',
         lr_scheduler=lr_scheduler,
         log_interval=10,
+        save_on_epoch_end=False
     )
     trainer.train()
     model.efls.save_pretrained(output_dir / 'efls')

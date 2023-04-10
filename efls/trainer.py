@@ -26,6 +26,7 @@ class Trainer:
         metrics: MetricModule | Sequence[MetricModule] = (),
         core_metric_name: str = '-loss',
         log_interval: int = 50,
+        save_on_epoch_end: bool = True,
     ):
         self.model = model
         self.optimizer = optimizer
@@ -35,6 +36,7 @@ class Trainer:
         self.accelerator = accelerator
         self.epochs = epochs
         self.log_interval = log_interval
+        self.save_on_epoch_end = save_on_epoch_end
 
         if core_metric_name.startswith('-'):
             higher_is_better = False
@@ -95,7 +97,8 @@ class Trainer:
                 self.accelerator.log(validation_metrics, step=current_epoch)
                 self.validation_metric_tracker.end_epoch()
 
-            self.accelerator.save_state()
+            if self.save_on_epoch_end:
+                self.accelerator.save_state()
 
         self.accelerator.end_training()
 
