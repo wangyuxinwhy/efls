@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import os
-
-os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+import logging
 from pathlib import Path
 from typing import Optional
 
+from rich.logging import RichHandler
 import typer
 from accelerate import Accelerator
 from accelerate.utils import set_seed, ProjectConfiguration
@@ -16,6 +16,15 @@ from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer, get_lin
 from efls.data import EflsCollator, TextDataset, read_jsonl
 from efls.model import EmbeddingFromLanguageModel
 from efls.trainer import Trainer
+
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+logging.basicConfig(
+    level="INFO",
+    datefmt="[%X]",
+    format="%(message)s",
+    handlers=[RichHandler()],
+)
+logger = logging.getLogger("rich")
 
 
 def create_dataloader(
@@ -64,7 +73,9 @@ def main(
     use_tensorboard: bool = False,
 ):
     set_seed(seed)
+    logger.info(f'Start with seed: {seed}')
     output_dir = output_dir or Path('experiments') / 'efls'
+    logger.info(f'Output dir: {output_dir}')
 
     project_config = ProjectConfiguration(project_dir=str(output_dir))
     accelerator = Accelerator(
@@ -74,14 +85,17 @@ def main(
         log_with=['tensorboard'] if use_tensorboard else None,
     )
     accelerator.init_trackers('efls')
-
+    logger.info(f'Using {accelerator.device} device')
+    
     encoder_tokenzier = AutoTokenizer.from_pretrained(encoder_name_or_path, fast=True)
     decoder_tokenzier = AutoTokenizer.from_pretrained(decoder_name_or_path)
     if decoder_tokenzier.pad_token is None:
         decoder_tokenzier.pad_token = decoder_tokenzier.eos_token
+    logger.info(f'Creat dataloader from {train_json_file}')
     train_dataloader = create_dataloader(encoder_tokenzier, decoder_tokenzier, train_json_file, batch_size=batch_size, max_length=max_length)
     train_dataloader = accelerator.prepare(train_dataloader)
     
+    logger.info(f'Creat model from {encoder_name_or_path} and {decoder_name_or_path}')
     encoder = AutoModel.from_pretrained(encoder_name_or_path)
     decoder = AutoModelForCausalLM.from_pretrained(decoder_name_or_path)
     model = EmbeddingFromLanguageModel(encoder, decoder, projection_size=projection_size, num_efls_tokens=num_efls_tokens)
@@ -90,7 +104,6 @@ def main(
     lr_scheduler = get_linear_schedule_with_warmup(
         optimizer=optimizer, num_warmup_steps=0.1 * total_steps, num_training_steps=total_steps
     )
-    model.efls
     model, optimizer, lr_scheduler = accelerator.prepare(model, optimizer, lr_scheduler)
 
     trainer = Trainer(
@@ -105,9 +118,12 @@ def main(
         log_interval=10,
         save_on_epoch_end=False
     )
+    logger.info('all set, start training')
     trainer.train()
-    model.efls.save_pretrained(output_dir / 'efls')
+    logger.info(f'Save model to {output_dir}')
 
+    model.efls.save_pretrained(output_dir / 'efls')
+    encoder_tokenzier.save_pretrained(output_dir / 'efls')
 
 if __name__ == '__main__':
     typer.run(main)
