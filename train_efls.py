@@ -7,6 +7,7 @@ from typing import Optional
 
 from rich.logging import RichHandler
 import typer
+from typer import Argument
 from accelerate import Accelerator
 from accelerate.utils import set_seed, ProjectConfiguration
 from torch.optim import AdamW
@@ -57,10 +58,10 @@ def create_adamw_optimizer(model: EmbeddingFromLanguageModel, lr: float, project
 
 
 def main(
-    encoder_name_or_path: str,
-    decoder_name_or_path: str,
-    train_json_file: Path,
-    projection_size: int = 300,
+    encoder_name_or_path: str = Argument(..., help='Encoder name or path, eg: bert-base-uncased'),
+    decoder_name_or_path: str = Argument(..., help='Decoder name or path, eg: gpt2-large'),
+    train_json_file: Path = Argument(..., help='jsonl format file, must contain "sentence1", "sentence2" fields'),
+    embedding_size: int = 300,
     num_efls_tokens: int = 10,
     output_dir: Optional[Path] = None,
     epochs: int = 3,
@@ -74,8 +75,9 @@ def main(
 ):
     set_seed(seed)
     logger.info(f'Start with seed: {seed}')
-    output_dir = output_dir or Path('experiments') / 'efls'
+    output_dir = output_dir or Path('experiments') / 'exp01'
     logger.info(f'Output dir: {output_dir}')
+    logger.info(f'Final Efls Model dir: {output_dir / "efls"}')
 
     project_config = ProjectConfiguration(project_dir=str(output_dir))
     accelerator = Accelerator(
@@ -98,7 +100,7 @@ def main(
     logger.info(f'Creat model from {encoder_name_or_path} and {decoder_name_or_path}')
     encoder = AutoModel.from_pretrained(encoder_name_or_path)
     decoder = AutoModelForCausalLM.from_pretrained(decoder_name_or_path)
-    model = EmbeddingFromLanguageModel(encoder, decoder, projection_size=projection_size, num_efls_tokens=num_efls_tokens)
+    model = EmbeddingFromLanguageModel(encoder, decoder, projection_size=embedding_size, num_efls_tokens=num_efls_tokens)
     optimizer = create_adamw_optimizer(model, lr, weight_decay=0.01)
     total_steps = len(train_dataloader) * epochs
     lr_scheduler = get_linear_schedule_with_warmup(

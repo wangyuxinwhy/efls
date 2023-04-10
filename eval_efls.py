@@ -7,8 +7,8 @@ from efls.data import read_jsonl
 
 
 def main(
-    json_file: Path,
-    model_path: Path,
+    json_file: Path = typer.Argument(..., help='jsonl format file, must contain "sentence1", "sentence2", "score" fields'),
+    model_path: Path = typer.Argument(..., help='efls model path'),
     whitening: bool = True,
 ):
     efls_predictor = EflsEmbeddingPredictor.from_pretrained(model_path)
