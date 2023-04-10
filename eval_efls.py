@@ -7,7 +7,10 @@ from efls.data import read_jsonl
 
 
 def main(
-    json_file: Path = typer.Argument(..., help='jsonl format file, must contain "sentence1", "sentence2", "score" fields'),
+    json_file: Path = typer.Argument(
+        ...,
+        help='jsonl format file, must contain "sentence1", "sentence2", "score" fields',
+    ),
     model_path: Path = typer.Argument(..., help='efls model path'),
     whitening: bool = True,
 ):
@@ -16,6 +19,7 @@ def main(
     spearman_score = evaluate_spearman(efls_predictor, records, whitening)
     print(f'Evaluation on {json_file.name}, model: {model_path}, whitening: {whitening}')
     print(f'Spearman score: {spearman_score:.4f}')
+
 
 if __name__ == '__main__':
     typer.run(main)

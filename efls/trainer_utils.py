@@ -25,7 +25,11 @@ class MetricModule:
 
 
 class MetricTracker:
-    def __init__(self, metric_modules: MetricModule | Sequence[MetricModule] = (), ndigits=4) -> None:
+    def __init__(
+        self,
+        metric_modules: MetricModule | Sequence[MetricModule] = (),
+        ndigits=4,
+    ) -> None:
         self.metric_modules = (metric_modules,) if isinstance(metric_modules, MetricModule) else metric_modules
         self.ndigits = ndigits
         self.loss: float = 0.0
