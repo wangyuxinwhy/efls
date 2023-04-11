@@ -47,10 +47,19 @@ class EflsCollator:
 
     def __call__(self, batch: list[str]):
         encoder_encodings = self.encoder_tokenzier(
-            batch, padding=True, truncation=True, max_length=self.max_length, return_tensors='pt', return_token_type_ids=False
+            batch,
+            padding=True,
+            truncation=True,
+            max_length=self.max_length,
+            return_tensors='pt',
+            return_token_type_ids=False,
         )
         decoder_encodings = self.decoder_tokenzier(
-            batch, padding=True, truncation=True, max_length=self.max_length, return_tensors='pt'
+            batch,
+            padding=True,
+            truncation=True,
+            max_length=self.max_length,
+            return_tensors='pt',
         )
         return {
             'encoder_input_ids': encoder_encodings['input_ids'],

@@ -26,6 +26,8 @@ class Trainer:
         metrics: MetricModule | Sequence[MetricModule] = (),
         core_metric_name: str = '-loss',
         log_interval: int = 50,
+        save_on_epoch_end: bool = True,
+        epoch_end_callbacks: list[Any] | None = None,
     ):
         self.model = model
         self.optimizer = optimizer
@@ -35,6 +37,7 @@ class Trainer:
         self.accelerator = accelerator
         self.epochs = epochs
         self.log_interval = log_interval
+        self.save_on_epoch_end = save_on_epoch_end
 
         if core_metric_name.startswith('-'):
             higher_is_better = False
@@ -47,6 +50,7 @@ class Trainer:
         self.best_model_tracker = BestModelTracker(higher_is_better)
         self.train_metric_tracker = MetricTracker(deepcopy(metrics))
         self.validation_metric_tracker = MetricTracker(deepcopy(metrics))
+        self.epoch_end_callbacks = epoch_end_callbacks or []
 
     def train(self):
         num_cumulate_batch = 0
@@ -95,7 +99,12 @@ class Trainer:
                 self.accelerator.log(validation_metrics, step=current_epoch)
                 self.validation_metric_tracker.end_epoch()
 
-            self.accelerator.save_state()
+            if self.save_on_epoch_end:
+                self.accelerator.save_state()
+
+            if self.epoch_end_callbacks:
+                for callback in self.epoch_end_callbacks:
+                    callback(self)
 
         self.accelerator.end_training()
 
