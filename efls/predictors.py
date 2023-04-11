@@ -93,7 +93,7 @@ class BertEmbeddingPredictor(EmbbedingPredictor):
         self.mode = BertEmbeddingMode(mode)
     
     def __call__(self, texts: list[str], mode: BertEmbeddingMode | str | None = None) -> torch.Tensor:
-        model = BertEmbeddingMode(mode) or self.mode
+        model = BertEmbeddingMode(mode) if mode else self.mode
         embeddings = []
         for batch in self._generate_batch(texts):
             if model == BertEmbeddingMode.static:
