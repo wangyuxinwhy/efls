@@ -4,7 +4,7 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-from transformers import AutoTokenizer, AutoModel, PreTrainedModel
+from transformers import AutoModel, PreTrainedModel
 
 
 def frozen_model(model: nn.Module):
@@ -98,62 +98,3 @@ class EmbeddingFromLanguageModel(nn.Module):
 
         output_dict = self.decoder(labels=labels, inputs_embeds=decoder_input_embeddings, return_dict=True)
         return output_dict
-
-
-class EflsEmbeddingPredictor:
-    def __init__(self, efsl_model: Efls, tokenzier, max_length: int = 64):
-        self.efls_model = efsl_model
-        self.efls_model.eval()
-        self.tokenizer = tokenzier
-        self.device = next(self.efls_model.parameters()).device
-        self.max_length = max_length
-
-    def __call__(self, texts: list[str]) -> torch.Tensor:
-        embeddings = []
-        for batch in self._generate_batch(texts):
-            encodes = self.tokenizer(batch, return_tensors='pt', padding=True, return_token_type_ids=False, truncation=True, max_length=self.max_length).to(device=self.device)
-            with torch.no_grad():
-                batch_embeddings = self.efls_model(**encodes)['embeddings'].mean(dim=1)
-            embeddings.extend(batch_embeddings.cpu().detach())
-        embeddings = torch.stack(embeddings, dim=0)
-        return embeddings
-    
-    @staticmethod
-    def _generate_batch(texts: list[str], batch_size: int = 32):
-        for i in range(0, len(texts), batch_size):
-            yield texts[i : i + batch_size]
-
-    @classmethod
-    def from_pretrained(cls, pretrained_model_path: Path | str):
-        pretrained_model_path = Path(pretrained_model_path)
-        efsl_model = Efls.from_pretrained(pretrained_model_path)
-        tokenizer = AutoTokenizer.from_pretrained(pretrained_model_path)
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        efsl_model.to(device)
-        return cls(efsl_model, tokenizer)
-
-
-def compute_kernel_bias(vecs: torch.Tensor):
-    mu = vecs.mean(dim=0, keepdim=True)
-    cov = torch.cov(vecs.T)
-    svd_result = torch.linalg.svd(cov)
-    W = torch.mm(svd_result.U, torch.diag(1 / torch.sqrt(svd_result.S)))
-    return W, -mu
-
-
-def evaluate_spearman(efls_predictor: EflsEmbeddingPredictor, records: list[dict], whitening: bool = True):
-    from torchmetrics.regression.spearman import SpearmanCorrCoef
-
-    sentences1 = [record['sentence1'] for record in records]
-    sentences2 = [record['sentence2'] for record in records]
-    embeddings1 = efls_predictor(sentences1)
-    embeddings2 = efls_predictor(sentences2)
-    if whitening:
-        all_embeddings = torch.cat([embeddings1, embeddings2], dim=0)
-        kernel, bias = compute_kernel_bias(all_embeddings)
-        embeddings1 = torch.mm(embeddings1 + bias, kernel)
-        embeddings2 = torch.mm(embeddings2 + bias, kernel)
-    preds = torch.cosine_similarity(embeddings1, embeddings2, dim=1)
-    targets = torch.tensor([float(record['score']) for record in records])
-    spearman_score = SpearmanCorrCoef()(preds, targets)
-    return spearman_score
